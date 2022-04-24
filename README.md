@@ -1,3 +1,14 @@
+---
+title: Apes
+emoji: 💩
+colorFrom: gray
+colorTo: pink
+sdk: gradio
+sdk_version: 2.9.1
+app_file: interface.py
+pinned: false
+---
+
 ## Project repo for apes by ykilcher
 
 Note: most of the code is taken from nvlabs/stylegan2-ada-pytroch (original readme below).
