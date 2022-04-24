@@ -22,7 +22,7 @@ else:
 
     def _new_forward(self, *args, **kwargs):
         kwargs["force_fp32"] = True
-        return _old_forward(self, *args, **kwargs)
+        return _old_forward(*args, **kwargs)
 
     G.forward = types.MethodType(_new_forward, G)
 
@@ -30,7 +30,7 @@ else:
 
     def _new_synthesis_forward(self, *args, **kwargs):
         kwargs["force_fp32"] = True
-        return _old_synthesis_forward(self, *args, **kwargs)
+        return _old_synthesis_forward(*args, **kwargs)
 
     G.synthesis.forward = types.MethodType(_new_synthesis_forward, G.synthesis)
 
