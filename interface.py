@@ -44,7 +44,7 @@ def generate(num_images, interpolate):
         zs = torch.randn([num_images, G.z_dim])# latent codes
     with torch.no_grad():
         zs = zs.to(device)
-        img = G(zs, None, force_fp32=True, truncation_psi=1, noise_mode='const') 
+        img = G(zs, None, force_fp32=True, noise_mode='const') 
         img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
     return img.cpu().numpy()
 
