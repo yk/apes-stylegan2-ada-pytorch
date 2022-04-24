@@ -22,6 +22,18 @@ import torch.nn.functional as F
 import dnnlib
 import legacy
 
+_MODELS = {
+    "RN50": "https://openaipublic.azureedge.net/clip/models/afeb0e10f9e5a86da6080e35cf09123aca3b358a0c3e3b6c78a7b63bc04b6762/RN50.pt",
+    "RN101": "https://openaipublic.azureedge.net/clip/models/8fa8567bab74a42d41c5915025a8e4538c3bdbe8804a470a72f30b0d94fab599/RN101.pt",
+    "RN50x4": "https://openaipublic.azureedge.net/clip/models/7e526bd135e493cef0776de27d5f42653e6b4c8bf9e0f653bb11773263205fdd/RN50x4.pt",
+    "RN50x16": "https://openaipublic.azureedge.net/clip/models/52378b407f34354e150460fe41077663dd5b39c54cd0bfd2b27167a4a06ec9aa/RN50x16.pt",
+    "RN50x64": "https://openaipublic.azureedge.net/clip/models/be1cfb55d75a9666199fb2206c106743da0f6468c9d327f3e0d0a543a9919d9c/RN50x64.pt",
+    "ViT-B/32": "https://openaipublic.azureedge.net/clip/models/40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af/ViT-B-32.pt",
+    "ViT-B/16": "https://openaipublic.azureedge.net/clip/models/5806e77cd80f8b59890b7e101eabd078d9fb84e6937f9e85e4ecb61988df416f/ViT-B-16.pt",
+    "ViT-L/14": "https://openaipublic.azureedge.net/clip/models/b8cca3fd41ae0c99ba7e8951adf17d267cdb84cd88be6f7c2e0eca1737a03836/ViT-L-14.pt",
+    "ViT-L/14@336px": "https://openaipublic.azureedge.net/clip/models/3035c92b350959924f9f00213499208652fc7ea050643e8b385c2dac08641f02/ViT-L-14-336px.pt",
+}
+
 def project(
     G,
     target: torch.Tensor, # [C,H,W] and dynamic range [0,255], W & H must match G output resolution
@@ -35,6 +47,9 @@ def project(
     noise_ramp_length          = 0.75,
     regularize_noise_weight    = 1e5,
     verbose                    = False,
+    model_name='vgg16',
+    loss_type='l2',
+    normalize_for_clip=True,
     device: torch.device
 ):
     assert target.shape == (G.img_channels, G.img_resolution, G.img_resolution)
@@ -56,16 +71,38 @@ def project(
     # Setup noise inputs.
     noise_bufs = { name: buf for (name, buf) in G.synthesis.named_buffers() if 'noise_const' in name }
 
+    USE_CLIP = model_name != 'vgg16'
     # Load VGG16 feature detector.
     url = 'https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/metrics/vgg16.pt'
+    if USE_CLIP:
+        # url = 'https://openaipublic.azureedge.net/clip/models/40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af/ViT-B-32.pt'
+        # url = 'https://openaipublic.azureedge.net/clip/models/5806e77cd80f8b59890b7e101eabd078d9fb84e6937f9e85e4ecb61988df416f/ViT-B-16.pt'
+        # url = 'https://openaipublic.azureedge.net/clip/models/b8cca3fd41ae0c99ba7e8951adf17d267cdb84cd88be6f7c2e0eca1737a03836/ViT-L-14.pt'
+        # url = 'https://openaipublic.azureedge.net/clip/models/3035c92b350959924f9f00213499208652fc7ea050643e8b385c2dac08641f02/ViT-L-14-336px.pt'
+        url = _MODELS[model_name]
     with dnnlib.util.open_url(url) as f:
         vgg16 = torch.jit.load(f).eval().to(device)
 
     # Features for target image.
     target_images = target.unsqueeze(0).to(device).to(torch.float32)
-    if target_images.shape[2] > 256:
-        target_images = F.interpolate(target_images, size=(256, 256), mode='area')
-    target_features = vgg16(target_images, resize_images=False, return_lpips=True)
+    if USE_CLIP:
+        image_mean = torch.tensor([0.48145466, 0.4578275, 0.40821073]).to(device)[:, None, None]
+        image_std = torch.tensor([0.26862954, 0.26130258, 0.27577711]).to(device)[:, None, None]
+        # target_images = F.interpolate(target_images, size=(224, 224), mode='area')
+        target_images = F.interpolate(target_images, size=(vgg16.input_resolution.item(), vgg16.input_resolution.item()), mode='area')
+        print("target_images.shape:", target_images.shape)
+        def _encode_image(image):
+            image = image / 255.
+            # image = torch.sigmoid(image)
+            if normalize_for_clip:
+                image = (image - image_mean) / image_std
+            return vgg16.encode_image(image)
+        target_features = _encode_image(target_images.clamp(0, 255))
+        target_features = target_features.detach()
+    else:
+        if target_images.shape[2] > 256:
+            target_images = F.interpolate(target_images, size=(256, 256), mode='area')
+        target_features = vgg16(target_images, resize_images=False, return_lpips=True)
 
     w_opt = torch.tensor(w_avg, dtype=torch.float32, device=device, requires_grad=True) # pylint: disable=not-callable
     w_out = torch.zeros([num_steps] + list(w_opt.shape[1:]), dtype=torch.float32, device=device)
@@ -98,8 +135,20 @@ def project(
             synth_images = F.interpolate(synth_images, size=(256, 256), mode='area')
 
         # Features for synth images.
-        synth_features = vgg16(synth_images, resize_images=False, return_lpips=True)
-        dist = (target_features - synth_features).square().sum()
+        if USE_CLIP:
+            synth_images = F.interpolate(synth_images, size=(vgg16.input_resolution.item(), vgg16.input_resolution.item()), mode='area')
+            synth_features = _encode_image(synth_images)
+            if loss_type == 'cosine':
+                target_features_normalized = target_features / target_features.norm(dim=-1, keepdim=True).detach()
+                synth_features_normalized = synth_features / synth_features.norm(dim=-1, keepdim=True).detach()
+                dist = 1.0 - torch.sum(synth_features_normalized * target_features_normalized)
+            elif loss_type == 'l1':
+                dist = (target_features - synth_features).abs().sum()
+            else:
+                dist = (target_features - synth_features).square().sum()
+        else:
+            synth_features = vgg16(synth_images, resize_images=False, return_lpips=True)
+            dist = (target_features - synth_features).square().sum()
 
         # Noise regularization.
         reg_loss = 0.0

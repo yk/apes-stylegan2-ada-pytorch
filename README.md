@@ -1,3 +1,8 @@
+## Project repo for apes by ykilcher
+
+Note: most of the code is taken from nvlabs/stylegan2-ada-pytroch (original readme below).
+I added gradio interfaces and CLIP projection.
+
 ## StyleGAN2-ADA &mdash; Official PyTorch implementation
 
 ![Teaser image](./docs/stylegan2-ada-teaser-1024x252.png)
