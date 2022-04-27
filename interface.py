@@ -64,7 +64,7 @@ def greet(num_images, interpolate):
 
 
 iface = gr.Interface(fn=greet, inputs=[
-    gr.inputs.Number(default=1, label="Num Images"),
+    gr.inputs.Number(default=1, label="Num Images", min=1, max=16),
     gr.inputs.Checkbox(default=False, label="Interpolate")
     ], outputs="image")
 iface.launch()
