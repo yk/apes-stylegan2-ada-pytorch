@@ -5,7 +5,7 @@ colorFrom: gray
 colorTo: pink
 sdk: gradio
 sdk_version: 2.9.1
-app_file: interface.py
+app_file: interface_projector.py
 pinned: false
 ---
 
